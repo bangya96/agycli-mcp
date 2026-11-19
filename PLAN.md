@@ -165,7 +165,7 @@ Status reads honour `result.json` even when `done` is missing. GC removes termin
 `agycli-mcp.mjs` (entry and subcommands `hook-wait`, `doctor`), `lib/mcp.mjs` (framing, version
 negotiation, dispatch), `lib/tools.mjs` (schemas and handlers), `lib/quota.mjs` (`getUsage`,
 `listModels`, model-to-group mapping), `lib/hook.mjs` (`hookWait`), `lib/doctor.mjs`,
-`test/fixtures/fake-agy.mjs`, `test/client-*.test.mjs`, README, `skills/agycli/SKILL.md`, CI.
+`fixtures/fake-agy.mjs`, `test/client-*.test.mjs`, README, `skills/agycli/SKILL.md`, CI.
 
 ## Tools
 
@@ -181,6 +181,6 @@ Run tools are annotated as potentially destructive (ask and edit share the schem
 
 ## Testing
 
-`node --test`. `test/fixtures/fake-agy.mjs` mimics agy flags and output with scenarios chosen by
+`node --test`. `fixtures/fake-agy.mjs` mimics agy flags and output with scenarios chosen by
 `FAKE_AGY_SCENARIO`. CI matrix: ubuntu, macos, windows on Node 18 and 22. Real-agy smoke tests are
 manual (`npm run smoke` is not required; document the commands).
