@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { loadConfig, normalizeRun, requestKey, parseJsonLenient, modelId, ValidationError } from '../lib/contracts.mjs';
 
 const config = loadConfig({ AGYCLI_MCP_STATE_DIR: join(tmpdir(), 'agycli-contracts-test') });
-const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agycli-contracts-')));
+const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "agycli-contracts-")));
 
 test('normalizeRun applies defaults', () => {
   const r = normalizeRun({ prompt: 'hello', cwd: dir }, config);
@@ -50,7 +50,7 @@ test('model accepts a whole `agy models` row and keeps the id', () => {
 });
 
 test('dirs are canonicalised, de-duplicated and exclude cwd', () => {
-  const extra = realpathSync(mkdtempSync(join(tmpdir(), 'agycli-extra-')));
+  const extra = realpathSync.native(mkdtempSync(join(tmpdir(), "agycli-extra-")));
   const r = normalizeRun({ prompt: 'x', cwd: dir, dirs: [extra, extra, dir] }, config);
   assert.deepEqual([...r.dirs], [extra]);
 });
