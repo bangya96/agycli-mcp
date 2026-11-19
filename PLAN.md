@@ -10,7 +10,7 @@ The difference from tphakala/agy-mcp: **three explicit modes**, with `plan` lock
 plan mode (tphakala always passes `--dangerously-skip-permissions --disable-slash-commands`, which
 disables `--mode plan`).
 
-v0 was reviewed by Astra (cx/gpt-6-astra) on 2026-11-19; this v1 records the decisions.
+v0 was reviewed by a second AI agent on 2026-11-19; this v1 records the decisions. The runtime layer (platform, agy, jobs, supervisor, change detection) and the MCP layer were then written in parallel against the contracts below.
 
 ## Facts measured locally (agy 1.5.12, macOS, 2026-11-19)
 
@@ -184,3 +184,16 @@ Run tools are annotated as potentially destructive (ask and edit share the schem
 `node --test`. `fixtures/fake-agy.mjs` mimics agy flags and output with scenarios chosen by
 `FAKE_AGY_SCENARIO`. CI matrix: ubuntu, macos, windows on Node 18 and 22. Real-agy smoke tests are
 manual (`npm run smoke` is not required; document the commands).
+
+## Implementation notes (v0.1.0)
+
+- `resolveLaunch`, `resolveAppDataDir`, `snapshot` and `compare` are async (the contract's
+  "async unless noted" rule); callers await them.
+- Quota and auth wording in stderr is only trusted when the run failed (non-zero exit or a non-SUCCESS
+  result), so a successful answer that mentions "quota" is not misclassified.
+- `atomicWriteJson` retries `rename` briefly on Windows `EPERM`/`EACCES`/`EBUSY` (a reader holding the
+  file open).
+- Real-agy smoke test (agy 1.5.12, macOS, 2026-11-19) through the MCP server: doctor all OK; `agy_usage`
+  and `agy_models` (23 models mapped to quota groups); `ask` answered with no changes detected; `plan`
+  returned `implementation_plan.md` with a clean `git status`; `edit` on the same `conversation_id`
+  implemented the plan and reported the changed file.

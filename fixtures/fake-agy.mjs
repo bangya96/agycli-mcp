@@ -18,6 +18,7 @@
 //                         hangs if the caller leaves stdin as an open pipe
 //   FAKE_AGY_VERSION      printed by --version (default 1.5.12)
 //   FAKE_AGY_USAGE_FILE   JSON file returned by `-p /usage` instead of the built-in sample
+//   FAKE_AGY_STDERR       text written to stderr at the start of a prompt run
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -152,6 +153,7 @@ async function main() {
     return;
   }
 
+  if (env.FAKE_AGY_STDERR) process.stderr.write(`${env.FAKE_AGY_STDERR}\n`);
   const continuing = value('--conversation');
   const cid = continuing || randomUUID();
   const isPlan = value('--mode') === 'plan';
