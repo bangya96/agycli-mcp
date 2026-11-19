@@ -1,0 +1,5 @@
+node_modules/
+.ref/
+*.log
+.fake-app-data/
+.DS_Store
