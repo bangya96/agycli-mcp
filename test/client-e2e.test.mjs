@@ -104,6 +104,7 @@ test('plan job recovers from a denied shell step and returns the plan', async ()
     assert.match(view.result.plan.content, /Implementation plan/);
     assert.match(r.content[0].text, /--- implementation_plan\.md/);
     assert.match(r.content[0].text, /mode "edit"/);
+    assert.match(view.next_step, /mode "edit"/);
   } finally {
     await s.close();
   }
@@ -115,6 +116,7 @@ test('background job can be waited on and cancelled', async () => {
     const started = await s.call('agy_run', { prompt: 'hang', mode: 'edit', cwd: s.cwd });
     const id = started.structuredContent.job_id;
     assert.ok(['starting', 'running'].includes(started.structuredContent.state));
+    assert.match(started.structuredContent.next_step, /agy_wait/);
     const busy = await s.call('agy_run', { prompt: 'second', mode: 'ask', cwd: s.cwd });
     assert.equal(busy.isError, true);
     assert.match(busy.content[0].text, /busy_workspace/);
