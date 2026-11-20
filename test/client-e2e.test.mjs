@@ -26,7 +26,8 @@ function filteredEnv() {
 function startServer(extraEnv = {}, { baseEnv = process.env, stateDir: reuseState, appData: reuseApp, cwd: reuseCwd } = {}) {
   const stateDir = reuseState || mkdtempSync(join(tmpdir(), 'agycli-e2e-state-'));
   const appData = reuseApp || mkdtempSync(join(tmpdir(), 'agycli-e2e-app-'));
-  const cwd = reuseCwd || realpathSync(mkdtempSync(join(tmpdir(), 'agycli-e2e-cwd-')));
+  // .native: on Windows CI tmpdir() is an 8.3 short path (RUNNER~1); the server reports the long one.
+  const cwd = reuseCwd || realpathSync.native(mkdtempSync(join(tmpdir(), 'agycli-e2e-cwd-')));
   const env = {
     ...baseEnv,
     AGYCLI_MCP_AGY_PATH: FAKE,
