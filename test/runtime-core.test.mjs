@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { buildArgs, runAgy, probeAgy } from '../lib/agy.mjs';
-import { resolveLaunch, resolveAppDataDir, isAlive, atomicWriteJson, readJson } from '../lib/platform.mjs';
+import { envGet, resolveLaunch, resolveAppDataDir, isAlive, atomicWriteJson, readJson } from '../lib/platform.mjs';
 import { snapshot, compare } from '../lib/change-detection.mjs';
 import { createJobStore, lockNames } from '../lib/jobs.mjs';
 import { loadConfig, PLAN_PREAMBLE, ASK_PREAMBLE, PLAN_CONTINUE_PROMPT } from '../lib/contracts.mjs';
@@ -21,6 +21,25 @@ async function fixture(t) {
   const options = { launch, app_data_dir, max_output_chars: 10000, env: { ...process.env, FAKE_AGY_APP_DATA: app_data_dir, FAKE_AGY_SCENARIO: 'ok' } };
   return { dir, request, options };
 }
+
+test('envGet exact lookup, Windows casing and unset values', () => {
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    assert.equal(envGet('PATH', { PATH: '/bin' }, platform), '/bin');
+    assert.equal(envGet('PATH', {}, platform), undefined);
+    assert.equal(envGet('PATH', { PATH: '' }, platform), undefined);
+  }
+  assert.equal(envGet('PATH', { Path: 'mixed' }, 'win32'), 'mixed');
+  assert.equal(envGet('SystemRoot', { systemroot: 'root' }, 'win32'), 'root');
+  assert.equal(envGet('PATH', { Path: 'mixed', PATH: 'exact' }, 'win32'), 'exact');
+  assert.equal(envGet('Path', { PATH: 'upper', Path: 'exact' }, 'win32'), 'exact');
+  assert.equal(envGet('PATH', { Path: 'first', path: 'second' }, 'win32'), 'first');
+  assert.equal(envGet('PATH', { PATH: '', Path: 'mixed' }, 'win32'), undefined);
+  assert.equal(envGet('PATH', { Path: '' }, 'win32'), undefined);
+  for (const platform of ['darwin', 'linux']) {
+    assert.equal(envGet('PATH', { Path: 'mixed' }, platform), undefined);
+    assert.equal(envGet('SystemRoot', { systemroot: 'root' }, platform), undefined);
+  }
+});
 
 test('buildArgs exact mode and continuation flags', () => {
   for (const mode of ['ask', 'edit', 'plan']) {
@@ -42,7 +61,7 @@ for (const [scenario, reason] of [['ok'], ['quota', 'quota_exhausted'], ['auth',
     const result = await runAgy(request, options);
     assert.equal(result.failure_reason, reason);
     assert.ok(result.conversation_id);
-    if (scenario === 'ok') { assert.equal(result.text, 'OK from fake agy ✓ é\n'); assert.equal(result.partial, false); assert.equal(result.usage.total_tokens, 115); }
+    if (scenario === 'ok') { assert.equal(result.text, 'OK from fake agy ✓ é\n'); assert.equal(result.partial, false); assert.equal(result.usage.total_tokens, 115); assert.equal(Object.hasOwn(result, 'text_truncated'), false); }
     if (scenario === 'no_result') { assert.equal(result.text, 'OK from fake agy ✓ é'); assert.equal(result.partial, true); assert.match(result.error, /without a result/); }
     if (scenario === 'quota') { assert.equal(result.retryable, true); assert.equal(result.error_id, 'fake-quota'); assert.ok(!result.error.includes('short_error')); }
     if (scenario === 'malformed') { assert.ok(result.malformed_lines > 0); assert.equal(result.text, 'line1\nline2'); }
@@ -63,6 +82,46 @@ for (const scenario of ['plan', 'plan_denied', 'plan_denied_always']) {
     if (scenario === 'plan_denied') { assert.equal(result.usage.total_tokens, 230); assert.equal(calls[1].argv[1], PLAN_CONTINUE_PROMPT); }
   });
 }
+
+for (const scenario of ['ok', 'no_result', 'plan']) {
+  test(`response truncation metadata ${scenario}`, async (t) => {
+    const { request, options } = await fixture(t);
+    options.env.FAKE_AGY_SCENARIO = scenario;
+    options.env.FAKE_AGY_RESPONSE = 'x'.repeat(100);
+    options.max_output_chars = 5;
+    if (scenario === 'plan') {
+      request.mode = 'plan';
+      // Only the terminal response's trailing newline exceeds this cap.
+      options.max_output_chars = 'Please review implementation_plan.md ✓'.length;
+    }
+    const result = await runAgy(request, options);
+    assert.equal(result.text.length, options.max_output_chars);
+    assert.equal(result.text_truncated, true);
+  });
+}
+
+test('response at the cap is not marked truncated', async (t) => {
+  const { request, options } = await fixture(t);
+  options.env.FAKE_AGY_RESPONSE = 'exact'; options.max_output_chars = 6;
+  const result = await runAgy(request, options);
+  assert.equal(result.text, 'exact\n');
+  assert.equal(Object.hasOwn(result, 'text_truncated'), false);
+});
+
+test('plan continuation preserves initial response truncation', async (t) => {
+  const { request, options } = await fixture(t); request.mode = 'plan';
+  options.env.FAKE_AGY_SCENARIO = 'plan_denied'; options.max_output_chars = 5;
+  options.on_event = (event) => {
+    if (event.event === 'result') {
+      options.env.FAKE_AGY_SCENARIO = 'no_result';
+      options.env.FAKE_AGY_RESPONSE = 'short';
+    }
+  };
+  const result = await runAgy(request, options);
+  assert.equal(result.text, 'short');
+  assert.equal(result.text_truncated, true);
+  assert.equal(result.usage.total_tokens, 115);
+});
 
 test('ignored stdin, probes, spawn failure and bounded output', async (t) => {
   const { request, options } = await fixture(t);

@@ -116,6 +116,7 @@ probeAgy(kind: 'version'|'models'|'usage', {launch, timeout_ms}) -> {exit_code, 
 
 `ExecutionResult`: `text, partial, exit_code, denied_actions[]` and optional `conversation_id,
 usage, num_turns, failure_reason, error, plan`.
+Optional `result.text_truncated: true` indicates response text exceeded `max_output_chars` in the initial run or continuation; omitted otherwise.
 
 ### lib/change-detection.mjs (Astra)
 

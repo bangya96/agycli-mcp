@@ -1,6 +1,6 @@
 {
   "name": "agycli-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dependency-free MCP server for the Google Antigravity CLI (agy) with plan / ask / edit modes, background jobs, quota checks and a completion-wake hook.",
   "type": "module",
   "bin": { "agycli-mcp": "agycli-mcp.mjs" },

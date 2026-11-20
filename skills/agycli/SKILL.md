@@ -1,12 +1,18 @@
 ---
 name: agycli
-description: Delegate study, planning, questions or implementation to the Google Antigravity CLI (agy) through the agycli MCP server (tools mcp__agycli__*). Use when the user asks to use agy / Antigravity CLI, e.g. "use agy", "ask agy", "guna agy", "suruh agy", "tanya agy", "minta agy buat plan".
+description: Delegate study, planning, questions or implementation to the Google Antigravity CLI (agy) through the agycli MCP server (tools agy_run, agy_wait, agy_status, agy_usage, agy_models). Use when the user asks to use agy / Antigravity CLI, e.g. "use agy", "ask agy", "guna agy", "suruh agy", "tanya agy", "minta agy buat plan".
+version: 0.2.0
+platforms: [macos, linux, windows]
 ---
 
 # agycli: delegating to the Antigravity CLI
 
-The agycli MCP server runs `agy` as background jobs. Claude stays the planner and reviewer;
-agy does the delegated study or implementation.
+The agycli MCP server runs `agy` as background jobs. You (the calling agent) stay the planner and
+reviewer; agy does the delegated study or implementation.
+
+This skill works in any MCP client (Claude Code, Hermes Agent, Codex CLI, ...). Clients prefix MCP
+tool names differently (`mcp__agycli__agy_run`, `mcp_agycli_agy_run`, ...): use whatever names your
+client exposes for the agycli server's `agy_*` tools.
 
 ## Pick the mode
 
@@ -24,7 +30,8 @@ agy does the delegated study or implementation.
 ## Plan-first workflow (default for anything non-trivial)
 
 1. `agy_run` with `mode: "plan"`, an absolute `cwd`, and a self-contained prompt.
-2. Collect it with `agy_wait` (repeat while running) or wait for the hook wake-up.
+2. Collect it with `agy_wait`, calling it again while the state is still `running`. (Claude Code
+   with the optional completion-wake hook is woken when the job ends instead.)
 3. Show the user the plan (summarise; quote key steps). Point out risks you see.
 4. Only after the user approves: `agy_run` with `mode: "edit"`, the **same** `conversation_id`, and
    a prompt like "The plan is approved. Implement it." Add any changes the user asked for.
@@ -66,6 +73,12 @@ models share another; Argon has its own.
 
 `agy_run_sync` waits about 90 s. For anything longer use `agy_run` and then `agy_wait` (each call
 blocks up to about 90 s). Do not start a second edit job in the same workspace while one is running.
+
+Every result starts with `job_id`, `state`, `conversation_id`, `cwd`, the plan path and a `next:`
+line saying what to do next; read those before the long response body.
+
+Cancelling or timing out a tool call does not stop the job. To stop it, call `agy_cancel`. After a
+lost connection, use `agy_jobs` / `agy_status` to find the job before starting another one.
 
 ## Terms of Service
 

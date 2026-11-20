@@ -1,7 +1,7 @@
 # agycli-mcp
 
 A dependency-free [MCP](https://modelcontextprotocol.io) server for the **Google Antigravity CLI** (`agy`).
-It lets Claude Code (or any MCP client) hand work to `agy` in three explicit modes:
+It lets Claude Code, Hermes Agent or any other MCP client hand work to `agy` in three explicit modes:
 
 | Mode | What agy may do | How it is enforced |
 |---|---|---|
@@ -15,6 +15,12 @@ for Claude Code, and a `doctor` command.
 - Pure Node.js 18+, no `npm install`, no build step: clone and run `node agycli-mcp.mjs`.
 - macOS, Windows and Linux from one file.
 - MIT licence.
+
+| MCP client | Status |
+|---|---|
+| Claude Code | Supported, plus the optional skill and completion-wake hook ([setup](#claude-code)) |
+| Hermes Agent | Supported: collect long jobs with `agy_wait` ([setup](#hermes-agent)) |
+| Other stdio MCP clients (Codex CLI, Cursor, ...) | Standard MCP over stdio; every result is also plain text ([setup](#other-mcp-clients)) |
 
 ## Why another agy MCP server?
 
@@ -59,7 +65,9 @@ Windows (PowerShell):
 claude mcp add agycli -- node C:\path\to\agycli-mcp\agycli-mcp.mjs
 ```
 
-Or in any MCP client config:
+### Other MCP clients
+
+Clients that use the common `mcpServers` JSON format:
 
 ```json
 {
@@ -105,6 +113,53 @@ result was already read). Add to `~/.claude/settings.json`:
   `--timeout-ms` or `AGYCLI_MCP_HOOK_TIMEOUT_MS` to change).
 - Hooks run with your shell environment, not the MCP server's. If you set `AGYCLI_MCP_STATE_DIR`
   for the server, set it for the hook too.
+
+### Hermes Agent
+
+[Hermes Agent](https://hermes-agent.nousresearch.com) (Nous Research) uses agycli-mcp as a normal
+stdio MCP server. Add it to `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  agycli:
+    command: "/usr/local/bin/node"   # absolute path to node: `which node`
+    args: ["/absolute/path/to/agycli-mcp/agycli-mcp.mjs"]
+    timeout: 300                     # per tool call; agy_run_sync and agy_wait return within ~90 s
+```
+
+Windows:
+
+```yaml
+mcp_servers:
+  agycli:
+    command: 'C:\Program Files\nodejs\node.exe'
+    args: ['C:\path\to\agycli-mcp\agycli-mcp.mjs']
+    timeout: 300
+    env:
+      SystemRoot: "${SystemRoot}"
+      USERPROFILE: "${USERPROFILE}"
+      APPDATA: "${APPDATA}"
+      LOCALAPPDATA: "${LOCALAPPDATA}"
+      TEMP: "${TEMP}"
+```
+
+Then run `/reload-mcp` in a Hermes chat. What differs from Claude Code:
+
+- **No completion wake-up.** The hook above is Claude Code only. In Hermes, start long jobs with
+  `agy_run` and collect them with `agy_wait` (call it again while the state is `running`); use
+  `agy_run_sync` for short ones. Every result begins with `job_id`, `state`, `conversation_id`,
+  `cwd`, the plan path and a `next:` line.
+- **Filtered environment.** Hermes gives MCP servers only a few variables (`PATH`, `HOME` and
+  similar) plus what you list under `env`. Put any `AGYCLI_MCP_*` setting there, and on Windows the
+  variables shown above. If agy cannot start or cannot find its sign-in, the error names the
+  missing variables.
+- **Skill.** `skills/agycli/SKILL.md` uses the agentskills.io format. Copy the `skills/agycli`
+  folder to `~/.hermes/skills/agycli/`.
+- **Same machine.** agy must be installed and signed in where Hermes runs, and the `cwd` you pass
+  must exist there.
+- With `trust: untrusted`, Hermes asks before `agy_run`, `agy_run_sync` and `agy_cancel`; the
+  read-only tools are annotated and do not prompt.
+- Cancelling a tool call in Hermes does not stop the agy job; use `agy_cancel`.
 
 ## Tools
 
@@ -179,7 +234,10 @@ agy is looked up in `AGYCLI_MCP_AGY_PATH`, then `PATH`, then the usual install l
 - Real agy 1.5.12 on macOS, through the MCP server: `doctor`, `agy_usage`, `agy_models`, an `ask`
   job (no files changed), a `plan` job (plan returned, working tree untouched) and an `edit` job that
   continued the plan's conversation and implemented it (changed file reported).
-- The automated suite (fake agy) runs in CI on Linux, macOS and Windows with Node 18 and 22.
+- The automated suite (fake agy) runs in CI on Linux, macOS and Windows with Node 18 and 22. It
+  includes a client that reads only the text of each result and starts the server with a filtered
+  environment, as Hermes Agent does, then reconnects mid-job. Hermes itself is not part of CI;
+  reports from Hermes users are welcome.
 
 ## Windows status
 

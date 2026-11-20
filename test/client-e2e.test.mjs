@@ -10,12 +10,25 @@ import { fileURLToPath } from 'node:url';
 const ENTRY = fileURLToPath(new URL('../agycli-mcp.mjs', import.meta.url));
 const FAKE = fileURLToPath(new URL('../fixtures/fake-agy.mjs', import.meta.url));
 
-function startServer(extraEnv = {}) {
-  const stateDir = mkdtempSync(join(tmpdir(), 'agycli-e2e-state-'));
-  const appData = mkdtempSync(join(tmpdir(), 'agycli-e2e-app-'));
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'agycli-e2e-cwd-')));
+// Roughly what a filtering MCP client passes a stdio server. POSIX: Hermes Agent's documented
+// baseline. Windows (undocumented for Hermes): the MCP Python SDK's default inherited set.
+const POSIX_BASELINE = ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TERM', 'SHELL', 'TMPDIR'];
+const WINDOWS_BASELINE = ['APPDATA', 'HOMEDRIVE', 'HOMEPATH', 'LOCALAPPDATA', 'PATH', 'PATHEXT', 'PROCESSOR_ARCHITECTURE', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERNAME', 'USERPROFILE'];
+
+function filteredEnv() {
+  const win = process.platform === 'win32';
+  const keep = new Set(win ? WINDOWS_BASELINE : POSIX_BASELINE);
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => (win ? keep.has(k.toUpperCase()) : keep.has(k) || k.startsWith('XDG_'))),
+  );
+}
+
+function startServer(extraEnv = {}, { baseEnv = process.env, stateDir: reuseState, appData: reuseApp, cwd: reuseCwd } = {}) {
+  const stateDir = reuseState || mkdtempSync(join(tmpdir(), 'agycli-e2e-state-'));
+  const appData = reuseApp || mkdtempSync(join(tmpdir(), 'agycli-e2e-app-'));
+  const cwd = reuseCwd || realpathSync(mkdtempSync(join(tmpdir(), 'agycli-e2e-cwd-')));
   const env = {
-    ...process.env,
+    ...baseEnv,
     AGYCLI_MCP_AGY_PATH: FAKE,
     AGYCLI_MCP_STATE_DIR: stateDir,
     AGYCLI_MCP_APP_DATA_DIR: appData,
@@ -150,6 +163,61 @@ test('validation errors come back in-band', async () => {
     const r = await s.call('agy_run', { prompt: '/x', mode: 'plan', cwd: s.cwd });
     assert.equal(r.isError, true);
     assert.match(r.content[0].text, /invalid_params/);
+  } finally {
+    await s.close();
+  }
+});
+
+// A client that reads only the text content (never structuredContent), with a filtered
+// environment, that reconnects mid-job: roughly how Hermes Agent drives the server.
+test('text-only client with a filtered environment: plan, poll, reconnect, continue', async () => {
+  const text = (r) => r.content.map((c) => c.text).join('\n');
+  let s = startServer({ FAKE_AGY_SCENARIO: 'plan_denied' }, { baseEnv: filteredEnv() });
+  const { stateDir, appData, cwd } = s;
+  let id;
+  try {
+    const started = text(await s.call('agy_run', { prompt: 'plan a README', mode: 'plan', cwd }));
+    id = (started.match(/^job_id: ([0-9a-f-]{36})$/m) || [])[1];
+    assert.ok(id, started);
+    assert.match(started, /^next: .*agy_wait/m);
+    assert.match(started, new RegExp(`^cwd: ${cwd.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`, 'm'));
+  } finally {
+    await s.close();
+  }
+
+  // Reconnect: a new server process on the same state dir finds and finishes the job.
+  s = startServer({ FAKE_AGY_SCENARIO: 'plan_denied' }, { baseEnv: filteredEnv(), stateDir, appData, cwd });
+  try {
+    let done;
+    for (let i = 0; i < 60 && !done; i++) {
+      const t = text(await s.call('agy_wait', { job_id: id, wait_ms: 1000 }));
+      if (/^state: done/m.test(t)) done = t;
+      else assert.match(t, /^state: (starting|running)/m, t);
+    }
+    assert.ok(done, 'plan job did not finish');
+    const cid = (done.match(/conversation_id: (\S+)/) || [])[1];
+    assert.ok(cid, done);
+    // The plan path and the next step come before the long body.
+    const planLine = done.search(/^plan: .*implementation_plan\.md/m);
+    const body = done.indexOf('--- ');
+    assert.ok(planLine > 0 && planLine < body, done);
+    assert.ok(done.search(/^next: .*mode "edit".*conversation_id/m) < body, done);
+
+    const edit = text(await s.call('agy_run_sync', { prompt: 'The plan is approved. Implement it.', mode: 'edit', cwd, conversation_id: cid, wait_ms: 30_000 }));
+    assert.match(edit, /^state: done/m, edit);
+    assert.match(edit, new RegExp(`conversation_id: ${cid}`));
+    assert.match(edit, /^changes: /m);
+  } finally {
+    await s.close();
+  }
+});
+
+test('error results carry readable text', async () => {
+  const s = startServer({}, { baseEnv: filteredEnv() });
+  try {
+    const r = await s.call('agy_status', { job_id: 'not-a-job' });
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, /job_id/);
   } finally {
     await s.close();
   }
